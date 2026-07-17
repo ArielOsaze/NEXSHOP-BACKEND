@@ -1,0 +1,77 @@
+const path = require("path");
+const express = require("express");
+const dotenv = require("dotenv");
+const cors = require("cors");
+
+dotenv.config();
+
+const db = require("./config/db");
+
+const authRoutes = require("./routes/authRoutes");
+const orderRoutes = require("./routes/orderRoutes");
+const productRoutes = require("./routes/productRoutes");
+const authMiddleware = require("./middleware/authMiddleware");
+const uploadRoutes = require("./routes/uploadRoutes");
+
+const app = express();
+
+// =========================
+// Middleware
+// =========================
+app.use(cors({
+    origin: [
+        "http://127.0.0.1:5500",
+        "http://localhost:5500"
+    ],
+    credentials: true
+}));
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Folder public (HTML, CSS, JS)
+app.use(express.static(path.join(__dirname, "public")));
+
+// =========================
+// Routes API
+// =========================
+app.use("/api/auth", authRoutes);
+app.use("/api/orders", orderRoutes);
+app.use("/api/products", productRoutes);
+app.use("/api/upload", uploadRoutes);
+
+// =========================
+// Test API
+// =========================
+app.post("/tes", (req, res) => {
+    res.json({
+        status: "OK"
+    });
+});
+
+// =========================
+// Protected Route
+// =========================
+app.get("/profile", authMiddleware, (req, res) => {
+    res.json({
+        message: "Selamat datang",
+        user: req.user
+    });
+});
+
+// =========================
+// Home
+// =========================
+app.get("/", (req, res) => {
+    res.send("Backend NexShop Berjalan 🚀");
+});
+
+// =========================
+// Start Server
+// =========================
+app.listen(3000, () => {
+    console.log("=================================");
+    console.log("🚀 NexShop Backend Running");
+    console.log("🌐 http://localhost:3000");
+    console.log("=================================");
+});
