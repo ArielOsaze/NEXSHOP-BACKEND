@@ -49,3 +49,41 @@ exports.getMyOrders = async (req, res) => {
         res.status(500).json({ message: "Server Error" });
     }
 };
+
+// ===========================
+// GET SEMUA PESANAN (untuk admin dashboard)
+// select("*") dipakai (bukan enumerasi kolom) supaya tidak error kalau
+// skema tabel `orders` kamu belum/tidak punya kolom tertentu (mis. status).
+// Nama field di-alias di sini supaya langsung cocok dengan yang dipakai
+// dashboard.js di frontend (customerName, date, dst) — tidak perlu ubah
+// frontend lagi.
+// ===========================
+exports.getAllOrders = async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from("orders")
+            .select("*")
+            .order("created_at", { ascending: false });
+
+        if (error) {
+            console.log(error);
+            return res.status(500).json({ message: "Database Error" });
+        }
+
+        const orders = data.map(order => ({
+            id: order.id,
+            customerName: order.recipient_name,
+            email: order.recipient_email,
+            items: order.items,
+            total: order.total,
+            status: order.status || "pending", // fallback kalau kolom status belum ada
+            paymentMethod: order.payment_method,
+            date: order.created_at
+        }));
+
+        res.json(orders);
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server Error" });
+    }
+};
