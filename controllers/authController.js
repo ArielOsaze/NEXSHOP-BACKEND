@@ -1,10 +1,22 @@
 const supabase = require("../config/db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const { sendOtpEmail } = require("../config/mailer");
+
+const OTP_EXPIRY_MINUTES = 10;
+
+function generateOtp() {
+    // kode 6 digit, contoh "042817"
+    return String(Math.floor(100000 + Math.random() * 900000));
+}
 
 // REGISTER
 exports.register = async (req, res) => {
     const { fullname, email, password } = req.body;
+
+    if (!fullname || !email || !password) {
+        return res.status(400).json({ message: "Semua field wajib diisi" });
+    }
 
     try {
         const { data: existing, error: findErr } = await supabase
@@ -23,17 +35,143 @@ exports.register = async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
+        const otp = generateOtp();
+        const otpExpiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000).toISOString();
 
         const { error: insertErr } = await supabase
             .from("users")
-            .insert([{ fullname, email, password: hashedPassword }]);
+            .insert([{
+                fullname,
+                email,
+                password: hashedPassword,
+                email_verified: false,
+                otp_code: otp,
+                otp_expires_at: otpExpiresAt
+            }]);
 
         if (insertErr) {
             console.log(insertErr);
             return res.status(500).json({ message: "Gagal register" });
         }
 
-        res.status(201).json({ message: "Register berhasil" });
+        try {
+            await sendOtpEmail(email, otp);
+        } catch (mailErr) {
+            console.log("Gagal kirim email OTP:", mailErr);
+            // akun tetap dibuat, user bisa minta kirim ulang lewat /resend-otp
+            return res.status(201).json({
+                message: "Register berhasil, tapi gagal mengirim email OTP. Silakan minta kirim ulang.",
+                email
+            });
+        }
+
+        res.status(201).json({
+            message: "Register berhasil. Cek email kamu untuk kode verifikasi.",
+            email
+        });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Server Error" });
+    }
+};
+
+// VERIFY OTP
+exports.verifyOtp = async (req, res) => {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+        return res.status(400).json({ message: "Email dan kode OTP wajib diisi" });
+    }
+
+    try {
+        const { data: user, error } = await supabase
+            .from("users")
+            .select("id, otp_code, otp_expires_at, email_verified")
+            .eq("email", email)
+            .maybeSingle();
+
+        if (error) {
+            console.log(error);
+            return res.status(500).json({ message: "Database Error" });
+        }
+
+        if (!user) {
+            return res.status(404).json({ message: "Akun tidak ditemukan" });
+        }
+
+        if (user.email_verified) {
+            return res.status(400).json({ message: "Akun sudah terverifikasi" });
+        }
+
+        if (!user.otp_code || user.otp_code !== otp) {
+            return res.status(400).json({ message: "Kode OTP salah" });
+        }
+
+        if (!user.otp_expires_at || new Date(user.otp_expires_at) < new Date()) {
+            return res.status(400).json({ message: "Kode OTP sudah kedaluwarsa, minta kirim ulang" });
+        }
+
+        const { error: updateErr } = await supabase
+            .from("users")
+            .update({ email_verified: true, otp_code: null, otp_expires_at: null })
+            .eq("id", user.id);
+
+        if (updateErr) {
+            console.log(updateErr);
+            return res.status(500).json({ message: "Gagal verifikasi akun" });
+        }
+
+        res.json({ message: "Verifikasi berhasil. Kamu sekarang bisa login." });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Server Error" });
+    }
+};
+
+// RESEND OTP
+exports.resendOtp = async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+        return res.status(400).json({ message: "Email wajib diisi" });
+    }
+
+    try {
+        const { data: user, error } = await supabase
+            .from("users")
+            .select("id, email_verified")
+            .eq("email", email)
+            .maybeSingle();
+
+        if (error) {
+            console.log(error);
+            return res.status(500).json({ message: "Database Error" });
+        }
+
+        if (!user) {
+            return res.status(404).json({ message: "Akun tidak ditemukan" });
+        }
+
+        if (user.email_verified) {
+            return res.status(400).json({ message: "Akun sudah terverifikasi" });
+        }
+
+        const otp = generateOtp();
+        const otpExpiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000).toISOString();
+
+        const { error: updateErr } = await supabase
+            .from("users")
+            .update({ otp_code: otp, otp_expires_at: otpExpiresAt })
+            .eq("id", user.id);
+
+        if (updateErr) {
+            console.log(updateErr);
+            return res.status(500).json({ message: "Gagal membuat kode baru" });
+        }
+
+        await sendOtpEmail(email, otp);
+
+        res.json({ message: "Kode OTP baru sudah dikirim ke email kamu." });
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: "Server Error" });
@@ -64,6 +202,14 @@ exports.login = async (req, res) => {
 
         if (!validPassword) {
             return res.status(401).json({ message: "Email atau password salah" });
+        }
+
+        if (!user.email_verified) {
+            return res.status(403).json({
+                message: "Email belum diverifikasi. Cek kode OTP yang dikirim ke emailmu.",
+                needsVerification: true,
+                email: user.email
+            });
         }
 
         const token = jwt.sign(
