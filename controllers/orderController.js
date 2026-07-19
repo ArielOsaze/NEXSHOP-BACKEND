@@ -3,7 +3,8 @@ const snap = require("../config/midtrans");
 
 exports.create = async (req, res) => {
     const { recipient_name, recipient_email, items } = req.body;
-    const userId = req.user.id; // dari authMiddleware
+    // req.user bisa null (guest checkout) berkat optionalAuthMiddleware
+    const userId = req.user ? req.user.id : null;
 
     if (!recipient_name || !recipient_email || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ message: "Data pesanan tidak lengkap" });

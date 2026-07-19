@@ -2,8 +2,11 @@ const express = require("express");
 const router = express.Router();
 const orderController = require("../controllers/orderController");
 const authMiddleware = require("../middleware/authMiddleware");
+const optionalAuthMiddleware = require("../middleware/optionalAuthMiddleware");
 
-router.post("/", authMiddleware, orderController.create);
+// pakai optionalAuthMiddleware: checkout boleh dari guest (tanpa login) ATAU user login
+router.post("/", optionalAuthMiddleware, orderController.create);
+
 router.get("/my", authMiddleware, orderController.getMyOrders);
 router.get("/", authMiddleware, orderController.getAllOrders); // baru: buat admin dashboard
 
