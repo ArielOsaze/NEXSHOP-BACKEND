@@ -212,6 +212,12 @@ exports.login = async (req, res) => {
             });
         }
 
+        if (user.is_blacklisted) {
+            return res.status(403).json({
+                message: "Akun kamu telah diblokir. Hubungi admin NexShop kalau ini keliru."
+            });
+        }
+
         const token = jwt.sign(
             { id: user.id, email: user.email, role: user.role },
             process.env.JWT_SECRET,
