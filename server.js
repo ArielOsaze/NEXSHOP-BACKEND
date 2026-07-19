@@ -11,6 +11,7 @@ const authRoutes = require("./routes/authRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const productRoutes = require("./routes/productRoutes");
 const userRoutes = require("./routes/userRoutes"); // baru
+const promoRoutes = require("./routes/promoRoutes"); // baru
 const authMiddleware = require("./middleware/authMiddleware");
 const uploadRoutes = require("./routes/uploadRoutes");
 
@@ -42,6 +43,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/users", userRoutes); // baru
+app.use("/api/promo", promoRoutes); // baru
 
 // =========================
 // Test API
