@@ -65,6 +65,8 @@ exports.createProduct = async (req, res) => {
   sold,
   description,
   category,
+  strike_price,
+  is_flash_sale,
 } = req.body;
 
 console.log(req.body);
@@ -87,6 +89,8 @@ console.log(req.body);
           sold,
           description,
           category,
+          strike_price: strike_price || null,
+          is_flash_sale: !!is_flash_sale,
         },
       ])
       .select();
@@ -124,6 +128,8 @@ exports.updateProduct = async (req, res) => {
       sold,
       description,
       category,
+      strike_price,
+      is_flash_sale,
     } = req.body;
 
     const { data, error } = await supabase
@@ -137,6 +143,8 @@ exports.updateProduct = async (req, res) => {
         sold,
         description,
         category,
+        strike_price: strike_price || null,
+        is_flash_sale: !!is_flash_sale,
       })
       .eq("id", id)
       .select();

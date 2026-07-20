@@ -1,5 +1,6 @@
 const supabase = require("../config/db");
 const { getSnapClient } = require("../config/midtrans");
+const { validatePromoCode, incrementUsage } = require("./promoCodeController");
 
 exports.create = async (req, res) => {
     const { recipient_name, recipient_email, items } = req.body;
@@ -43,8 +44,38 @@ exports.create = async (req, res) => {
             return res.status(400).json({ message: e.message });
         }
 
-        const total = item_details.reduce((sum, i) => sum + i.price * i.quantity, 0);
+        const subtotal = item_details.reduce((sum, i) => sum + i.price * i.quantity, 0);
         const orderId = "NX" + Date.now();
+
+        // Validasi ulang kode promo DI SERVER — jangan pernah percaya angka
+        // diskon yang dikirim dari frontend, itu bisa dimanipulasi di browser.
+        const { promo_code } = req.body;
+        let discountAmount = 0;
+        let appliedPromoCode = null;
+
+        if (promo_code) {
+            const promoResult = await validatePromoCode(promo_code, subtotal);
+            if (!promoResult.valid) {
+                return res.status(400).json({ message: promoResult.message });
+            }
+            discountAmount = promoResult.discount;
+            appliedPromoCode = promoResult.promo.code;
+        }
+
+        const total = Math.max(subtotal - discountAmount, 0);
+
+        // Midtrans menolak transaksi kalau gross_amount gak sama persis dengan
+        // total item_details — kalau ada diskon, kita kirim sebagai "item"
+        // negatif tersendiri supaya jumlahnya tetap pas.
+        const midtransItems = [...item_details];
+        if (discountAmount > 0) {
+            midtransItems.push({
+                id: "DISCOUNT",
+                name: `Diskon (${appliedPromoCode})`.slice(0, 50),
+                price: -discountAmount,
+                quantity: 1
+            });
+        }
 
         // Simpan order dulu dengan status pending, sebelum minta snap_token ke Midtrans
         const { error: insertErr } = await supabase
@@ -56,6 +87,9 @@ exports.create = async (req, res) => {
                 recipient_email,
                 payment_method: "midtrans",
                 items,
+                subtotal,
+                discount_amount: discountAmount,
+                promo_code: appliedPromoCode,
                 total,
                 status: "pending"
             }]);
@@ -74,7 +108,7 @@ exports.create = async (req, res) => {
                     order_id: orderId,
                     gross_amount: total
                 },
-                item_details,
+                item_details: midtransItems,
                 customer_details: {
                     first_name: recipient_name,
                     email: recipient_email
@@ -182,6 +216,12 @@ exports.handleNotification = async (req, res) => {
         const transactionStatus = notification.transaction_status;
         const fraudStatus = notification.fraud_status;
 
+        const { data: existingOrder } = await supabase
+            .from("orders")
+            .select("status, promo_code")
+            .eq("id", orderId)
+            .maybeSingle();
+
         let status = "pending";
 
         if (transactionStatus === "capture") {
@@ -211,6 +251,11 @@ exports.handleNotification = async (req, res) => {
         if (error) {
             console.log(error);
             return res.status(500).json({ message: "Gagal update status pesanan" });
+        }
+
+        // catat pemakaian kode promo cuma sekali, pas transisi PERTAMA KALI ke "paid"
+        if (status === "paid" && existingOrder && existingOrder.status !== "paid" && existingOrder.promo_code) {
+            await incrementUsage(existingOrder.promo_code);
         }
 
         // Midtrans expect balasan 200 OK sederhana

@@ -16,6 +16,7 @@ const authMiddleware = require("./middleware/authMiddleware");
 const uploadRoutes = require("./routes/uploadRoutes");
 const topupRoutes = require("./routes/topupRoutes"); // baru: topup diamond (TokoVoucher)
 const settingsRoutes = require("./routes/settingsRoutes"); // baru: settings & api keys
+const promoCodeRoutes = require("./routes/promoCodeRoutes"); // baru: kode promo / redeem code
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use("/api/users", userRoutes); // baru
 app.use("/api/promo", promoRoutes); // baru
 app.use("/api/topup", topupRoutes); // baru: topup diamond (TokoVoucher)
 app.use("/api/settings", settingsRoutes); // baru: settings & api keys
+app.use("/api/promo-codes", promoCodeRoutes); // baru: kode promo / redeem code
 
 // =========================
 // Test API

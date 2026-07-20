@@ -122,7 +122,22 @@ exports.updateMe = async (req, res) => {
 
         const payload = {};
         if (fullname) payload.fullname = fullname;
-        if (email && email !== user.email) payload.email = email;
+
+        if (email && email !== user.email) {
+            // cek dulu email itu belum dipakai akun lain, biar errornya jelas
+            // (bukan cuma "Gagal update profil" generik dari duplicate key constraint)
+            const { data: existing } = await supabase
+                .from("users")
+                .select("id")
+                .eq("email", email)
+                .neq("id", req.user.id)
+                .maybeSingle();
+
+            if (existing) {
+                return res.status(400).json({ message: "Email sudah dipakai akun lain" });
+            }
+            payload.email = email;
+        }
 
         if (new_password) {
             if (!current_password) {
@@ -150,13 +165,24 @@ exports.updateMe = async (req, res) => {
             .maybeSingle();
 
         if (error) {
-            console.log(error);
-            return res.status(500).json({ message: "Gagal update profil" });
+            // tampilkan pesan error asli dari Supabase (bukan generik) supaya
+            // gampang di-diagnosis — misal RLS policy, kolom gak ada, dst.
+            console.log("updateMe error:", error);
+            return res.status(500).json({ message: `Gagal update profil: ${error.message}` });
+        }
+
+        if (!data) {
+            // update "berhasil" (tanpa error) tapi gak ada baris yang match —
+            // biasanya karena RLS policy nge-block row ini walau service key
+            // dipakai, atau id di token gak cocok sama id di tabel users
+            return res.status(500).json({
+                message: "Gagal update profil: tidak ada baris yang ter-update. Cek apakah SUPABASE_SERVICE_KEY di .env server benar-benar Service Role Key (bukan anon key), dan apakah RLS di tabel users mengizinkan service role."
+            });
         }
 
         res.json({ message: "Profil berhasil diperbarui", data });
     } catch (err) {
         console.log(err);
-        res.status(500).json({ message: "Server Error" });
+        res.status(500).json({ message: err.message || "Server Error" });
     }
 };
