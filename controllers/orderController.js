@@ -1,5 +1,5 @@
 const supabase = require("../config/db");
-const snap = require("../config/midtrans");
+const { getSnapClient } = require("../config/midtrans");
 
 exports.create = async (req, res) => {
     const { recipient_name, recipient_email, items } = req.body;
@@ -68,6 +68,7 @@ exports.create = async (req, res) => {
         // Buat transaksi Midtrans, dapetin snap_token buat dibuka di frontend
         let transaction;
         try {
+            const snap = await getSnapClient();
             transaction = await snap.createTransaction({
                 transaction_details: {
                     order_id: orderId,
@@ -174,6 +175,7 @@ exports.getAllOrders = async (req, res) => {
 // ===========================
 exports.handleNotification = async (req, res) => {
     try {
+        const snap = await getSnapClient();
         const notification = await snap.transaction.notification(req.body);
 
         const orderId = notification.order_id;
